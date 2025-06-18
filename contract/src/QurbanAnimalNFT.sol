@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "lib/openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
-import "lib/openzeppelin-contracts/contracts/access/AccessControl.sol";
-import "lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
-import "lib/openzeppelin-contracts/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 /**
  * @title QurbanAnimalNFT - ERC721 untuk Hewan Qurban
@@ -27,6 +27,8 @@ contract QurbanAnimalNFT is ERC721, AccessControl, ReentrancyGuard, Pausable {
     mapping(uint256 => QurbanAnimal) public animals;
     mapping(uint256 => uint256) public campaignToAnimal; // campaignId -> animalTokenId
     
+    uint256[] public animalIds;
+
     uint256 private _nextTokenId = 1;
     
     event AnimalMinted(uint256 indexed tokenId, uint256 indexed campaignId, string animalType);
@@ -62,6 +64,7 @@ contract QurbanAnimalNFT is ERC721, AccessControl, ReentrancyGuard, Pausable {
         });
         
         campaignToAnimal[campaignId] = tokenId;
+        animalIds.push(tokenId);
         
         emit AnimalMinted(tokenId, campaignId, animalType);
         return tokenId;
@@ -75,6 +78,10 @@ contract QurbanAnimalNFT is ERC721, AccessControl, ReentrancyGuard, Pausable {
     
     function getAnimalByCampaign(uint256 campaignId) public view returns (uint256) {
         return campaignToAnimal[campaignId];
+    }
+
+    function getAllAnimalIds() public view returns (uint256[] memory) {
+        return animalIds;
     }
     
     function pause() public onlyRole(DEFAULT_ADMIN_ROLE) {
