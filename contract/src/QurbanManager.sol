@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
-import "lib/openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
-import "lib/openzeppelin-contracts/contracts/token/ERC1155/ERC1155.sol";
-import "lib/openzeppelin-contracts/contracts/access/AccessControl.sol";
-import "lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
-import "lib/openzeppelin-contracts/contracts/utils/Pausable.sol";
-import "lib/openzeppelin-contracts/contracts/token/ERC721/IERC721Receiver.sol";
+import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
+import "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
-import "./QurbanCouponNFT.sol";
 import "./QurbanAnimalNFT.sol";
 import "./QurbanToken.sol";
 
@@ -22,7 +20,6 @@ contract QurbanManager is ERC1155, AccessControl, ReentrancyGuard, Pausable, IER
     
     QurbanToken public qurbanToken;
     QurbanAnimalNFT public qurbanAnimalNFT;
-    QurbanCouponNFT public qurbanCouponNFT;
     
     // Token IDs untuk ERC1155
     uint256 public constant SAPI_TOKEN = 1;
@@ -46,15 +43,37 @@ contract QurbanManager is ERC1155, AccessControl, ReentrancyGuard, Pausable, IER
         bool isCompleted;       // Apakah sudah mencapai target
         bool isCancelled;       // Apakah dibatalkan
         bool couponsGenerated;  // Apakah kupon sudah di-generate
+        bool couponAssigned;
         mapping(address => uint256) contributions; // Kontribusi per address
         address[] contributors; // Daftar kontributor
     }
+
+    struct TokenInfo {
+        uint256 campaignId;    // ID campaign
+        uint256 animalTokenId; // ID NFT hewan yang dipotong
+        string animalType;     // "sapi" atau "kambing"
+        bool isClaimed;        // Status sudah di-claim
+        uint256 claimDeadline; // Deadline claim
+    }
+
+    uint256[] public allCampaignIds;
     
     mapping(uint256 => QurbanCampaign) public campaigns;
-    mapping(address => uint256[]) public userParticipations;
+    // mapping(address => uint256) public userParticipations;
+    mapping(uint256 => TokenInfo) public tokenInfo;
+    mapping(uint256 => uint256[]) public animalToCoupons; // animalTokenId -> couponTokenIds[]
+    mapping(uint256 => uint256[]) public campaignToCoupons; // campaignId -> couponTokenIds[]
+    mapping(uint256 => string) private _tokenURIs;
+    mapping(address => uint256) public couponOwner;
     
+    uint256 private _nextCouponId = 1;
     uint256 private _nextCampaignId = 1;
+
+    uint256 public constant COUPON_BASE = 2000;
     
+    event CouponMinted(uint256 indexed tokenId, uint256 indexed campaignId, uint256 indexed animalTokenId, address recipient);
+    event CouponClaimed(uint256 indexed tokenId, address indexed claimer);
+    event CouponAssigned(uint256 indexed tokenId, address indexed newOwner);
     event CampaignCreated(uint256 indexed campaignId, uint256 indexed tokenId, uint256 deadline);
     event ContributionMade(uint256 indexed campaignId, address indexed contributor, uint256 amount);
     event CampaignCompleted(uint256 indexed campaignId);
@@ -65,20 +84,13 @@ contract QurbanManager is ERC1155, AccessControl, ReentrancyGuard, Pausable, IER
     
     constructor(
         address qurbanTokenAddress,
-        address qurbanAnimalNFTAddress,
-        address qurbanCouponNFTAddress
-    ) ERC1155("https://api.qurbanchain.com/metadata/{id}.json") {
+        address qurbanAnimalNFTAddress
+    ) ERC1155("") {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(RT_ROLE, msg.sender);
         
         qurbanToken = QurbanToken(qurbanTokenAddress);
         qurbanAnimalNFT = QurbanAnimalNFT(qurbanAnimalNFTAddress);
-        qurbanCouponNFT = QurbanCouponNFT(qurbanCouponNFTAddress);
-        
-        // Grant roles to this contract
-        // qurbanToken.grantRole(qurbanToken.BURNER_ROLE(), address(this));
-        // qurbanAnimalNFT.grantRole(qurbanAnimalNFT.MINTER_ROLE(), address(this));
-        // qurbanCouponNFT.grantRole(qurbanCouponNFT.MINTER_ROLE(), address(this));
     }
     
     function createCampaign(
@@ -101,9 +113,15 @@ contract QurbanManager is ERC1155, AccessControl, ReentrancyGuard, Pausable, IER
             campaign.targetAmount = KAMBING_SHARES * PRICE_PER_SHARE;
             campaign.maxParticipants = KAMBING_SHARES;
         }
+
+        allCampaignIds.push(campaignId);
         
         emit CampaignCreated(campaignId, tokenId, campaign.deadline);
         return campaignId;
+    }
+
+    function getAllCampaignIds() public view returns (uint256[] memory) {
+        return allCampaignIds;
     }
     
     function contribute(uint256 campaignId) public nonReentrant whenNotPaused {
@@ -125,10 +143,10 @@ contract QurbanManager is ERC1155, AccessControl, ReentrancyGuard, Pausable, IER
         campaign.collectedAmount += PRICE_PER_SHARE;
         campaign.participants++;
         
-        userParticipations[msg.sender].push(campaignId);
+        // userParticipations[msg.sender] = campaignId;
         
         // Mint ERC1155 token untuk tracking
-        _mint(msg.sender, campaign.tokenId, 1, "");
+        _mint(msg.sender, campaignId, 1, "");
         
         emit ContributionMade(campaignId, msg.sender, PRICE_PER_SHARE);
         
@@ -168,40 +186,41 @@ contract QurbanManager is ERC1155, AccessControl, ReentrancyGuard, Pausable, IER
         require(animalTokenId > 0, "Animal not found");
         
         string memory animalType = campaign.tokenId == SAPI_TOKEN ? "sapi" : "kambing";
+        string memory newUri = campaign.tokenId == SAPI_TOKEN ? "ipfs://QmToLhDUTFCfTeosjyBXbAHUxE8sbhgmqueUmpGV7kSMo8" : "ipfs://QmYjc8jTa15So3HzcqdtMovYwHCZzTcKJFcvNHH1ATonQk";
         uint256 couponsPerParticipant = 2;
         uint256 totalCoupons = campaign.participants * couponsPerParticipant;
         
         // Generate weight distribution (simulasi pembagian daging)
-        uint256[] memory portionWeights = _generatePortionWeights(campaign.tokenId, totalCoupons);
+
+        uint256[] memory newCouponIds = new uint256[](totalCoupons);
+        uint256[] memory newCouponValues = new uint256[](totalCoupons); // Akan diisi dengan 1 untuk setiap kupon unik
         
-        // Mint coupons dari animal NFT
-        uint256[] memory couponTokenIds = qurbanCouponNFT.mintCouponsFromAnimal(
-            campaignId,
-            animalTokenId,
-            animalType,
-            totalCoupons,
-            portionWeights,
-            address(this), // Mint to contract first
-            campaign.claimDeadline
-        );
+        for (uint256 i = 0; i < totalCoupons; i++) {
+            uint256 tokenId = COUPON_BASE + _nextCouponId++; // ID unik untuk setiap kupon
+            newCouponIds[i] = tokenId;
+            newCouponValues[i] = 1; // Setiap kupon unik memiliki supply 1
+            
+            tokenInfo[tokenId] = TokenInfo({
+                campaignId: campaignId,
+                animalTokenId: animalTokenId,
+                animalType: animalType,
+                isClaimed: false,
+                claimDeadline: campaign.claimDeadline
+            });
+            
+            animalToCoupons[animalTokenId].push(tokenId);
+            campaignToCoupons[campaignId].push(tokenId);
+            setTokenURI(tokenId, newUri);
+            
+            emit CouponMinted(tokenId, campaignId, animalTokenId, address(this)); // Event per kupon
+        }
+
+        _mintBatch(address(this), newCouponIds, newCouponValues, "");
         
         // Mark animal as slaughtered
         qurbanAnimalNFT.markAsSlaughtered(animalTokenId);
         
-        emit CouponsGenerated(campaignId, animalTokenId, couponTokenIds);
-    }
-    
-    function _generatePortionWeights(uint256 tokenId, uint256 totalCoupons) private pure returns (uint256[] memory) {
-        uint256[] memory weights = new uint256[](totalCoupons);
-        uint256 baseWeight = tokenId == SAPI_TOKEN ? 2500 : 1200; // Base weight in grams
-        
-        for (uint256 i = 0; i < totalCoupons; i++) {
-            // Add some variation to make it realistic
-            uint256 variation = (i % 3) * 200; // 0, 200, 400 gram variation
-            weights[i] = baseWeight + variation;
-        }
-        
-        return weights;
+        emit CouponsGenerated(campaignId, animalTokenId, newCouponIds);
     }
     
     function assignCouponsToWarga(
@@ -211,12 +230,44 @@ contract QurbanManager is ERC1155, AccessControl, ReentrancyGuard, Pausable, IER
         QurbanCampaign storage campaign = campaigns[campaignId];
         require(campaign.couponsGenerated, "Coupons not generated yet");
         
-        uint256[] memory couponIds = qurbanCouponNFT.getCouponsByCampaign(campaignId);
+        uint256[] memory couponIds = campaignToCoupons[campaignId];
         require(couponIds.length == wargaAddresses.length, "Mismatch coupon and address count");
         
-        for (uint256 i = 0; i < couponIds.length; i++) {
-            qurbanCouponNFT.assignCoupon(couponIds[i], wargaAddresses[i]);
+        for (uint i = 0; i < couponIds.length; i++) {
+            uint256 currentCouponId = couponIds[i];
+            address targetWarga = wargaAddresses[i];
+            uint256[] memory idsToTransfer = new uint256[](1);
+            idsToTransfer[0] = currentCouponId;
+            uint256[] memory valuesToTransfer = new uint256[](1);
+            valuesToTransfer[0] = 1;
+            couponOwner[targetWarga] = currentCouponId;
+            _safeTransferFrom(address(this), targetWarga, currentCouponId, 1, "");
+            emit CouponAssigned(currentCouponId, targetWarga);
         }
+
+        campaign.couponAssigned = true;
+    }
+
+    function claimCoupon(uint256 tokenId) public nonReentrant whenNotPaused {
+        // Pastikan token ID adalah kupon
+        require(tokenId >= COUPON_BASE, "Invalid token ID for coupon claim");
+        
+        // Pastikan msg.sender adalah pemilik kupon
+        require(balanceOf(msg.sender, tokenId) > 0, "Not the owner of this coupon");
+        
+        TokenInfo storage coupon = tokenInfo[tokenId];
+        require(!coupon.isClaimed, "Coupon already claimed");
+        require(block.timestamp <= coupon.claimDeadline, "Claim deadline passed");
+        
+        coupon.isClaimed = true; // Tandai kupon sebagai sudah diklaim
+
+        // burn
+
+        couponOwner[msg.sender] = 0;
+        _burn(msg.sender, tokenId, 1);
+        // ---------------------------------------------
+        
+        emit CouponClaimed(tokenId, msg.sender);
     }
     
     function cancelCampaign(uint256 campaignId) public onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -260,39 +311,20 @@ contract QurbanManager is ERC1155, AccessControl, ReentrancyGuard, Pausable, IER
         }
     }
     
-    function getCampaignInfo(uint256 campaignId) public view returns (
-        uint256 tokenId,
-        uint256 targetAmount,
-        uint256 collectedAmount,
-        uint256 participants,
-        uint256 maxParticipants,
-        uint256 deadline,
-        uint256 claimDeadline,
-        bool isCompleted,
-        bool isCancelled,
-        bool couponsGenerated
-    ) {
-        QurbanCampaign storage campaign = campaigns[campaignId];
-        return (
-            campaign.tokenId,
-            campaign.targetAmount,
-            campaign.collectedAmount,
-            campaign.participants,
-            campaign.maxParticipants,
-            campaign.deadline,
-            campaign.claimDeadline,
-            campaign.isCompleted,
-            campaign.isCancelled,
-            campaign.couponsGenerated
-        );
+    function getUserContribution(uint256 campaignId) public view returns (address[] memory) {
+        return campaigns[campaignId].contributors;
     }
     
-    function getUserContribution(uint256 campaignId, address user) public view returns (uint256) {
-        return campaigns[campaignId].contributions[user];
+    // function getUserParticipations(address user) public view returns (uint256[] memory) {
+    //     return userParticipations[user];
+    // }
+
+    function getMyCoupon() public view returns (uint256) {
+        return couponOwner[msg.sender];
     }
-    
-    function getUserParticipations(address user) public view returns (uint256[] memory) {
-        return userParticipations[user];
+
+    function getCouponByCampaign(uint campaignId) public view returns (uint256[] memory) {
+        return campaignToCoupons[campaignId];
     }
     
     function pause() public onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -302,9 +334,20 @@ contract QurbanManager is ERC1155, AccessControl, ReentrancyGuard, Pausable, IER
     function unpause() public onlyRole(DEFAULT_ADMIN_ROLE) {
         _unpause();
     }
-    
-    function _update(address from, address to, uint256[] memory ids, uint256[] memory values) internal override whenNotPaused {
-        super._update(from, to, ids, values);
+
+    /**
+     * @dev Set metadata URI untuk token
+     */
+    function setTokenURI(uint256 tokenId, string memory newuri) public {
+        // TODO: Store custom URI per token
+        // Check if URI is empty or not a URI string
+        
+        require(bytes(newuri).length > 0, "Invalid custom metadata uri");
+        _tokenURIs[tokenId] = newuri;   
+    }
+
+    function uri(uint256 _tokenId) public view override returns (string memory) {
+        return _tokenURIs[_tokenId];
     }
 
     function supportsInterface(bytes4 interfaceId)
@@ -324,5 +367,38 @@ contract QurbanManager is ERC1155, AccessControl, ReentrancyGuard, Pausable, IER
     ) external override returns (bytes4) {
         require(operator == address(this), "QurbanManager: Not operator of this transfer"); // QurbanManager adalah operator
         return this.onERC721Received.selector;
+    }
+
+    /**
+    * @dev Lihat {IERC1155Receiver-onERC1155Received}.
+    * Fungsinya dipanggil ketika ERC1155 token ditransfer ke kontrak ini.
+    * Harus mengembalikan `bytes4(keccak256("onERC1155Received(address,address,uint256,uint256,bytes)"))`
+    * jika kontrak ingin menerima token tersebut.
+    */
+    function onERC1155Received(
+        address operator,
+        address from,
+        uint256 id,
+        uint256 value,
+        bytes calldata data
+    ) external returns (bytes4) {
+        return this.onERC1155Received.selector;
+    }
+
+    /**
+    * @dev Lihat {IERC1155Receiver-onERC1155BatchReceived}.
+    * Fungsinya dipanggil ketika beberapa ERC1155 token ditransfer ke kontrak ini dalam satu batch.
+    * Harus mengembalikan `bytes4(keccak256("onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)"))`
+    * jika kontrak ingin menerima token-token tersebut.
+    */
+    function onERC1155BatchReceived(
+        address operator,
+        address from,
+        uint256[] calldata ids,
+        uint256[] calldata values,
+        bytes calldata data
+    ) external returns (bytes4) {
+        // Sama seperti onERC1155Received, Anda bisa menambahkan logika di sini.
+        return this.onERC1155BatchReceived.selector;
     }
 }
