@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Calendar, Users, Coins, Clock, CheckCircle, StatusIcon, Hash, User } from 'lucide-react';
+import { Calendar, Users, Coins, Clock, CheckCircle, Hash, User } from 'lucide-react';
 import { useAccount, useReadContract, useWriteContract } from "wagmi"
 import { QURBAN_MANAGER_ADDRESS, QURBAN_MANAGER_ABI, QURBAN_TOKEN_ADDRESS, QURBAN_TOKEN_ABI, APPROVE_VALUE, QURBAN_ANIMAL_ABI, QURBAN_ANIMAL_ADDRESS } from "../../constants/index";
 import { waitForTransactionReceipt, readContract } from "@wagmi/core"
@@ -13,9 +13,9 @@ interface AnimalCardProps {
 }
 
 const AnimalCard: React.FC<AnimalCardProps> = ({ animalId, index }) => {
-  const { writeContractAsync } = useWriteContract()
+  // const { writeContractAsync } = useWriteContract()
   const { isConnected, address } = useAccount();
-  const { isRT} = useRole();
+  // const { isRT} = useRole();
 
   const { data: dataAnimal } = useReadContract({
     address: QURBAN_ANIMAL_ADDRESS as `0x${string}`,
@@ -42,171 +42,6 @@ const AnimalCard: React.FC<AnimalCardProps> = ({ animalId, index }) => {
   console.log(dataAnimal)
 
   console.log(animalId, index, "WOI")
-
-  const approve = async () => {
-    toast.loading(`approving`, {
-      style: {
-        background: "rgba(32, 0, 82, 0.95)",
-        color: "#FBFAF9",
-        border: "1px solid rgba(131, 110, 249, 0.3)",
-        borderRadius: "12px",
-        fontFamily: "Inter, sans-serif",
-      },
-    })
-
-    try {
-      const result = await writeContractAsync({
-        address: QURBAN_TOKEN_ADDRESS as `0x${string}`,
-        abi: QURBAN_TOKEN_ABI,
-        functionName: "approve",
-        args: [QURBAN_MANAGER_ADDRESS, APPROVE_VALUE],
-        account: address as `0x${string}`,
-      })
-
-      toast.dismiss()
-      toast.loading("Approving transaction...", {
-        style: {
-          background: "rgba(32, 0, 82, 0.95)",
-          color: "#FBFAF9",
-          border: "1px solid rgba(131, 110, 249, 0.3)",
-          borderRadius: "12px",
-          fontFamily: "Inter, sans-serif",
-        },
-      })
-
-      await waitForTransactionReceipt(config, {
-        hash: result as `0x${string}`,
-      })
-
-      toast.dismiss()
-      // Success toast will be handled by event listener
-    } catch (error) {
-      console.error("Approve:", error)
-      toast.dismiss()
-      toast.error("Approve failed. Please try again.", {
-        style: {
-          background: "rgba(32, 0, 82, 0.95)",
-          color: "#FBFAF9",
-          border: "1px solid rgba(160, 5, 93, 0.5)",
-          borderRadius: "12px",
-          fontFamily: "Inter, sans-serif",
-        },
-      })
-    } finally {
-      await contribute()
-    }
-  }
-
-  const contribute = async () => {
-    toast.loading(`contributing...`, {
-      style: {
-        background: "rgba(32, 0, 82, 0.95)",
-        color: "#FBFAF9",
-        border: "1px solid rgba(131, 110, 249, 0.3)",
-        borderRadius: "12px",
-        fontFamily: "Inter, sans-serif",
-      },
-    })
-
-    try {
-      const result = await writeContractAsync({
-        address: QURBAN_MANAGER_ADDRESS as `0x${string}`,
-        abi: QURBAN_MANAGER_ABI,
-        functionName: "contribute",
-        args: [animalId],
-        account: address as `0x${string}`,
-      })
-
-      toast.dismiss()
-      toast.loading("Contributing...", {
-        style: {
-          background: "rgba(32, 0, 82, 0.95)",
-          color: "#FBFAF9",
-          border: "1px solid rgba(131, 110, 249, 0.3)",
-          borderRadius: "12px",
-          fontFamily: "Inter, sans-serif",
-        },
-      })
-
-      await waitForTransactionReceipt(config, {
-        hash: result as `0x${string}`,
-      })
-
-      toast.dismiss()
-      // Success toast will be handled by event listener
-    } catch (error) {
-      console.error("Contribute:", error)
-      toast.dismiss()
-      toast.error("Contribut failed. Please try again.", {
-        style: {
-          background: "rgba(32, 0, 82, 0.95)",
-          color: "#FBFAF9",
-          border: "1px solid rgba(160, 5, 93, 0.5)",
-          borderRadius: "12px",
-          fontFamily: "Inter, sans-serif",
-        },
-      })
-    }
-  }
-
-  const generateCouponsFromAnimal = async () => {
-    toast.loading(`waiting for approvement...`, {
-      style: {
-        background: "rgba(32, 0, 82, 0.95)",
-        color: "#FBFAF9",
-        border: "1px solid rgba(131, 110, 249, 0.3)",
-        borderRadius: "12px",
-        fontFamily: "Inter, sans-serif",
-      },
-    })
-
-    try {
-      const animalToken = await readContract(config, {
-        abi: QURBAN_ANIMAL_ABI,
-        address: QURBAN_ANIMAL_ADDRESS,
-        functionName: "campaignToAnimal",
-        args: [animalId]
-      });
-
-      const result = await writeContractAsync({
-        address: QURBAN_MANAGER_ADDRESS as `0x${string}`,
-        abi: QURBAN_MANAGER_ABI,
-        functionName: "generateCouponsFromAnimal",
-        args: [animalToken],
-        account: address as `0x${string}`,
-      })
-
-      toast.dismiss()
-      toast.loading("generating coupon...", {
-        style: {
-          background: "rgba(32, 0, 82, 0.95)",
-          color: "#FBFAF9",
-          border: "1px solid rgba(131, 110, 249, 0.3)",
-          borderRadius: "12px",
-          fontFamily: "Inter, sans-serif",
-        },
-      })
-
-      await waitForTransactionReceipt(config, {
-        hash: result as `0x${string}`,
-      })
-
-      toast.dismiss()
-      // Success toast will be handled by event listener
-    } catch (error) {
-      console.error("generate coupon:", error)
-      toast.dismiss()
-      toast.error("generate coupon failed. Please try again.", {
-        style: {
-          background: "rgba(32, 0, 82, 0.95)",
-          color: "#FBFAF9",
-          border: "1px solid rgba(160, 5, 93, 0.5)",
-          borderRadius: "12px",
-          fontFamily: "Inter, sans-serif",
-        },
-      })
-    }
-  }
   
   // const getStatusColor = () => {
   //   if (!dataAnimal) return 'bg-gray-500';

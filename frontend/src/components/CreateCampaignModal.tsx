@@ -12,9 +12,10 @@ import { config } from "@/App"
 
 interface CreateCampaignModalProps {
   children: JSX.Element
+  refetch: () => void;
 }
 
-export default function CreateCampaignModal({ children }: CreateCampaignModalProps) {
+export default function CreateCampaignModal({ children, refetch }: CreateCampaignModalProps) {
   const [isOpen, setIsOpen] = useState(false)
   const { writeContractAsync } = useWriteContract()
   const { address } = useAccount();
@@ -75,6 +76,7 @@ export default function CreateCampaignModal({ children }: CreateCampaignModalPro
         },
       })
     } finally {
+      refetch();
       setIsOpen(false)
     }
   }

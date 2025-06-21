@@ -12,7 +12,7 @@ const CampaignsSection: React.FC = () => {
   const { isRT } = useRole()
   const { isConnected } = useAccount();
 
-  const { data: dataCampaign } = useReadContract({
+  const { data: dataCampaign, refetch } = useReadContract({
     address: QURBAN_MANAGER_ADDRESS as `0x${string}`,
     abi: QURBAN_MANAGER_ABI,
     functionName: "getAllCampaignIds",
@@ -66,7 +66,7 @@ const CampaignsSection: React.FC = () => {
 
         {isRT ?  
           (<div className="w-1/4 flex mx-auto mb-8">
-            <CreateCampaignModal >
+            <CreateCampaignModal refetch={refetch}>
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
@@ -81,7 +81,7 @@ const CampaignsSection: React.FC = () => {
 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
           {dataCampaign?.length ? dataCampaign.map((campaignId, index) => (
-            <CampaignCard campaignId={campaignId} index={index} />
+            <CampaignCard refetch={refetch} campaignId={campaignId} index={index} />
           )) : null}
         </div>
 

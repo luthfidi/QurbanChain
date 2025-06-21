@@ -13,14 +13,15 @@ interface CouponCardProps {
   index: number;
   tokenInfo: any;
   myCoupon: bigint;
+  refetch: () => void
 }
 
-const CouponCard: React.FC<CouponCardProps> = ({ campaignId, index, tokenInfo, myCoupon }) => {
+const CouponCard: React.FC<CouponCardProps> = ({ campaignId, index, tokenInfo, myCoupon, refetch }) => {
   const { writeContractAsync } = useWriteContract()
   const { isConnected, address } = useAccount();
   const { isRT} = useRole();
   
-  const { data: coupons } = useReadContract({
+  const { data: coupons, refetch: refetchCoupon } = useReadContract({
     address: QURBAN_MANAGER_ADDRESS as `0x${string}`,
     abi: QURBAN_MANAGER_ABI,
     functionName: "getCouponByCampaign",
@@ -31,7 +32,7 @@ const CouponCard: React.FC<CouponCardProps> = ({ campaignId, index, tokenInfo, m
   })
 
   
-  const { data: dataCampaign } = useReadContract({
+  const { data: dataCampaign, refetch: refetchCampaign } = useReadContract({
     address: QURBAN_MANAGER_ADDRESS as `0x${string}`,
     abi: QURBAN_MANAGER_ABI,
     functionName: "campaigns",
@@ -95,6 +96,12 @@ const CouponCard: React.FC<CouponCardProps> = ({ campaignId, index, tokenInfo, m
           fontFamily: "Inter, sans-serif",
         },
       })
+    } finally {
+      setTimeout(() => {
+        refetch();
+        refetchCoupon();
+        refetchCampaign();
+      }, 500)
     }
   }
   
@@ -134,7 +141,11 @@ const CouponCard: React.FC<CouponCardProps> = ({ campaignId, index, tokenInfo, m
     if (isRT && dataCampaign) {
       if (!dataCampaign[10]) {
         return (
-          <ContributorModal totalContributors={Number(dataCampaign[3])} animal={Number(dataCampaign[0])} campaignId={campaignId}>
+          <ContributorModal refetch={() => {
+            refetch();
+            refetchCampaign();
+            refetchCoupon();
+          }} totalContributors={Number(dataCampaign[3])} animal={Number(dataCampaign[0])} campaignId={campaignId}>
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}

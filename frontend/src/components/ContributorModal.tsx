@@ -22,13 +22,15 @@ interface ContributorModalProps {
   animal: number
   campaignId: bigint
   children: string | JSX.Element | JSX.Element[]
+  refetch: () => void;
 }
 
 export default function ContributorModal({
   totalContributors = 4,
   animal,
   campaignId,
-  children
+  children,
+  refetch
 }: ContributorModalProps) {
   const { address } = useAccount()
   const { writeContractAsync } = useWriteContract()
@@ -94,6 +96,7 @@ export default function ContributorModal({
         },
       })
     } finally {
+      refetch();
       setIsOpen(false)
     }
   }

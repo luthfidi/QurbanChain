@@ -11,7 +11,7 @@ const CouponsSection: React.FC = () => {
   const { address, isConnected } = useAccount();
   const { isRT } = useRole()
 
-  const { data: dataCampaign } = useReadContract({
+  const { data: dataCampaign, refetch } = useReadContract({
     address: QURBAN_MANAGER_ADDRESS as `0x${string}`,
     abi: QURBAN_MANAGER_ABI,
     functionName: "getAllCampaignIds",
@@ -107,7 +107,7 @@ const CouponsSection: React.FC = () => {
           ) : (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
               {dataCampaign.map((campaignId, index) => (
-                <CouponCard campaignId={campaignId} index={index} />
+                <CouponCard refetch={refetch} campaignId={campaignId} index={index} />
               ))}
             </div>
           )}

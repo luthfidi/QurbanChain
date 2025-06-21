@@ -10,14 +10,15 @@ import { useRole } from '../../hooks/useRole';
 interface CampaignCardProps {
   campaignId: bigint;
   index: number;
+  refetch: () => void;
 }
 
-const CampaignCard: React.FC<CampaignCardProps> = ({ campaignId, index }) => {
+const CampaignCard: React.FC<CampaignCardProps> = ({ campaignId, index, refetch }) => {
   const { writeContractAsync } = useWriteContract()
   const { isConnected, address } = useAccount();
   const { isRT} = useRole();
 
-  const { data: dataCampaign } = useReadContract({
+  const { data: dataCampaign, refetch: refetchCampaign } = useReadContract({
     address: QURBAN_MANAGER_ADDRESS as `0x${string}`,
     abi: QURBAN_MANAGER_ABI,
     functionName: "campaigns",
@@ -133,6 +134,11 @@ const CampaignCard: React.FC<CampaignCardProps> = ({ campaignId, index }) => {
           fontFamily: "Inter, sans-serif",
         },
       })
+    } finally {
+      setTimeout(() => {
+        refetch();
+        refetchCampaign();
+      }, 500)
     }
   }
 
@@ -192,6 +198,11 @@ const CampaignCard: React.FC<CampaignCardProps> = ({ campaignId, index }) => {
           fontFamily: "Inter, sans-serif",
         },
       })
+    } finally {
+      setTimeout(() => {
+        refetch();
+        refetchCampaign();
+      }, 500)
     }
   }
   
@@ -306,7 +317,9 @@ const CampaignCard: React.FC<CampaignCardProps> = ({ campaignId, index }) => {
       </div>
 
       <div className="p-6">
-        <h3 className="text-xl font-bold text-gray-900 mb-2">Qurban Sapi</h3>
+        <h3 className="text-xl font-bold text-gray-900 mb-2">{
+          dataCampaign && Number(dataCampaign[0]) === 1 ? "Qurban Sapi" : "Qurban Kambing"
+        }</h3>
         <p className="text-gray-600 text-sm mb-4 line-clamp-2">
           {dataCampaign && Number(dataCampaign[0]) === 1 ?
           "Sapi berkualitas tinggi untuk qurban bersama komunitas Masjid Blockdev.":
